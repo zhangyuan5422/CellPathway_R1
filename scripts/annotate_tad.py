@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Nominate protein-coding genes in TADs containing DNM-overlapping enhancers."""
-
-from __future__ import annotations
+"""Find genes in TADs containing DNM-overlapping enhancers."""
 
 import argparse
 import shutil
@@ -11,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pyBigWig
 
-from validate_inputs import load_manifest
+from validate_inputs import load_enhancers
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +20,7 @@ TAD_FILES = {
 GENES = ROOT / "data" / "tad" / "genes_w_noncoding.bb"
 
 
-def enhancer_dnv_overlaps(enhancer: Path, dnv: Path):
+def enhancer_dnv_overlaps(enhancer, dnv):
     bedtools = shutil.which("bedtools")
     if bedtools is None:
         raise RuntimeError("bedtools was not found on PATH")
@@ -30,7 +28,6 @@ def enhancer_dnv_overlaps(enhancer: Path, dnv: Path):
         [bedtools, "intersect", "-a", str(enhancer), "-b", str(dnv), "-wa", "-wb"],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    assert process.stdout is not None
     for line in process.stdout:
         fields = line.rstrip("\n").split("\t")
         if len(fields) < 6:
@@ -45,7 +42,7 @@ def enhancer_dnv_overlaps(enhancer: Path, dnv: Path):
         raise RuntimeError(f"bedtools intersect failed: {stderr}")
 
 
-def interval_overlap(frame: pd.DataFrame, chrom: str, start: int, end: int) -> pd.DataFrame:
+def interval_overlap(frame, chrom, start, end):
     # Reproduces bedtools' handling of the historical zero-width DNM records.
     query_start = start - 1 if start == end and start > 0 else start
     query_end = end + 1 if start == end else end
@@ -56,13 +53,7 @@ def interval_overlap(frame: pd.DataFrame, chrom: str, start: int, end: int) -> p
     ]
 
 
-def locate_tad(
-    chrom: str,
-    start: int,
-    end: int,
-    domains: pd.DataFrame,
-    boundaries: pd.DataFrame,
-) -> tuple[tuple[str, int, int] | None, str]:
+def locate_tad(chrom, start, end, domains, boundaries):
     overlapping_boundaries = interval_overlap(boundaries, chrom, start, end)
     if overlapping_boundaries.empty:
         overlapping_domains = interval_overlap(domains, chrom, start, end).copy()
@@ -89,7 +80,7 @@ def locate_tad(
     return (chrom, int(left.start), int(right.end)), "cross_TAD_boundary"
 
 
-def genes_in_region(bigbed, region: tuple[str, int, int] | None) -> list[str]:
+def genes_in_region(bigbed, region):
     if region is None:
         return []
     try:
@@ -104,18 +95,18 @@ def genes_in_region(bigbed, region: tuple[str, int, int] | None) -> list[str]:
     return list(dict.fromkeys(genes))
 
 
-def enhancer_path(resource: str, enhancer_set: str) -> Path:
-    manifest = load_manifest(resource, check_content=False)
-    match = manifest[manifest["enhancer_set"] == enhancer_set]
+def enhancer_path(resource, enhancer_set):
+    enhancers = load_enhancers(resource, calculate_stats=False)
+    match = enhancers[enhancers["enhancer_set"] == enhancer_set]
     if len(match) != 1:
-        choices = ", ".join(manifest["enhancer_set"].head(10))
+        choices = ", ".join(enhancers["enhancer_set"].head(10))
         raise ValueError(
             f"Enhancer set {enhancer_set!r} is not in {resource}; first choices: {choices}"
         )
     return ROOT / "data" / "enhancers" / resource / match.iloc[0]["file"]
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dnv", type=Path, required=True)
     parser.add_argument("--resource", choices=("atlas", "scenhancer"), required=True)

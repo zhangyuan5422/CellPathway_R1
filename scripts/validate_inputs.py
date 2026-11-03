@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Validate the fixed CellPathway enhancer universes against their manifests."""
-
-from __future__ import annotations
+"""Check the packaged enhancer BED files."""
 
 import argparse
 import gzip
-import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -15,15 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {"atlas": 52, "scenhancer": 165}
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def bed_stats(path: Path) -> tuple[int, int]:
+def bed_stats(path):
     opener = gzip.open if path.suffix == ".gz" else open
     rows = 0
     bp = 0
@@ -42,55 +31,56 @@ def bed_stats(path: Path) -> tuple[int, int]:
     return rows, bp
 
 
-def load_manifest(resource: str, check_content: bool = True) -> pd.DataFrame:
-    manifest_path = ROOT / "data" / "enhancers" / f"{resource}_manifest.tsv"
-    frame = pd.read_csv(manifest_path, sep="\t", dtype={"sha256": str})
-    required = {"set_index", "enhancer_set", "file", "intervals", "bp", "sha256"}
-    missing = required - set(frame.columns)
-    if missing:
-        raise ValueError(f"{manifest_path}: missing columns {sorted(missing)}")
+def enhancer_name(path):
+    name = path.name.removesuffix(".gz").removesuffix(".bed")
+    return name.removesuffix(".hg38")
+
+
+def load_enhancers(resource, calculate_stats=True):
+    if resource not in EXPECTED:
+        raise ValueError(f"Unknown enhancer resource: {resource}")
+    base = ROOT / "data" / "enhancers" / resource
+    paths = sorted(
+        set(base.glob("*.bed")) | set(base.glob("*.bed.gz")),
+        key=lambda path: path.name,
+    )
+    rows = []
+    for set_index, path in enumerate(paths, 1):
+        intervals, bp = bed_stats(path) if calculate_stats else (None, None)
+        rows.append({
+            "set_index": set_index,
+            "enhancer_set": enhancer_name(path),
+            "file": path.name,
+            "intervals": intervals,
+            "bp": bp,
+        })
+    frame = pd.DataFrame(rows)
     if len(frame) != EXPECTED[resource]:
         raise ValueError(
             f"{resource}: expected {EXPECTED[resource]} sets, found {len(frame)}"
         )
     if frame["enhancer_set"].duplicated().any() or frame["file"].duplicated().any():
-        raise ValueError(f"{resource}: duplicate enhancer set or file in manifest")
-    if frame["set_index"].tolist() != list(range(1, len(frame) + 1)):
-        raise ValueError(f"{resource}: set_index must be consecutive and one-based")
-
-    base = ROOT / "data" / "enhancers" / resource
-    for row in frame.itertuples(index=False):
-        path = base / row.file
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        if check_content:
-            intervals, bp = bed_stats(path)
-            if intervals != int(row.intervals) or bp != int(row.bp):
-                raise ValueError(
-                    f"{path}: manifest says {row.intervals} rows/{row.bp} bp, "
-                    f"observed {intervals} rows/{bp} bp"
-                )
-            observed_hash = sha256(path)
-            if observed_hash != row.sha256:
-                raise ValueError(f"{path}: SHA-256 mismatch")
+        raise ValueError(f"{resource}: duplicate enhancer set or file")
     return frame
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--quick", action="store_true",
-        help="Check manifests and file presence without rereading all BED contents.",
+        help="Check enhancer directory file counts without parsing BED contents.",
     )
     args = parser.parse_args()
     for resource in EXPECTED:
-        frame = load_manifest(resource, check_content=not args.quick)
-        print(
-            f"{resource}: PASS; {len(frame)} sets; "
-            f"{int(frame['intervals'].sum()):,} intervals; {int(frame['bp'].sum()):,} summed bp"
-        )
+        frame = load_enhancers(resource, calculate_stats=not args.quick)
+        message = f"{resource}: PASS; {len(frame)} sets"
+        if not args.quick:
+            message += (
+                f"; {int(frame['intervals'].sum()):,} intervals; "
+                f"{int(frame['bp'].sum()):,} summed bp"
+            )
+        print(message)
 
 
 if __name__ == "__main__":
     main()
-

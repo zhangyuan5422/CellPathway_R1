@@ -16,13 +16,12 @@ The code and packaged inputs were exported from the audited `reproduction_result
 
 ```text
 data/
-  dnvs/                  prepared noncoding DNM BED files at CADD >= 0, 10, 15, 20
   enhancers/
     atlas/               52 EnhancerAtlas BED files
     scenhancer/          165 scEnhancer BED files
-    atlas_manifest.tsv
-    scenhancer_manifest.tsv
   tad/                   brain and CNCC TADs plus the gene BigBed
+example/
+  example.bed            1,000-record DNM input used by the example workflow
 scripts/
   validate_inputs.py
   run_enrichment.py
@@ -51,11 +50,11 @@ Alternatively, install `bedtools` separately and run `pip install -r requirement
 python scripts/validate_inputs.py
 ```
 
-Validation must report exactly 52 Atlas sets and 165 scEnhancer sets. It also checks file presence, interval counts, covered base pairs, and SHA-256 checksums against the manifests.
+Validation must report exactly 52 Atlas sets and 165 scEnhancer sets. It parses the BED files and reports their interval counts and covered base pairs.
 
 ## Run DNM enrichment
 
-Run both resources across all packaged cohorts and CADD thresholds:
+Run both resources with the packaged CADD >= 10 example:
 
 ```bash
 bash scripts/run_step1.sh
@@ -68,31 +67,30 @@ python scripts/run_enrichment.py --resource atlas --workers 8
 python scripts/run_enrichment.py --resource scenhancer --workers 8
 ```
 
-Restrict a run to one threshold and cohort:
+The example settings can also be supplied explicitly:
 
 ```bash
 python scripts/run_enrichment.py \
   --resource atlas \
-  --threshold 10 \
-  --cohort spark \
+  --dnv example/example.bed \
   --workers 8
 ```
 
-Results are written under `results/enrichment/<resource>/`. For each cohort and CADD threshold, the output reports enhancer length, DNM overlap count, DNM count in the remainder of the enhancer union, fold enrichment, one-sided Fisher exact P value, and Benjamini-Hochberg FDR across the complete resource universe.
+Results are written under `results/enrichment/<resource>/`. The output reports enhancer length, DNM overlap count, DNM count in the remainder of the enhancer union, fold enrichment, one-sided Fisher exact P value, and Benjamini-Hochberg FDR across the complete resource universe.
 
 This is the manuscript reproduction test: it uses enhancer base-pair length as the background and preserves the original interval-counting behavior. It should not be interpreted as a sequence-context- or mutation-rate-calibrated model.
 
 ## TAD-constrained candidate-gene annotation
 
-After selecting a phenotype-relevant enriched enhancer set, annotate its overlapping DNMs. For example, fetal-brain enhancers and SPARK DNMs at CADD >= 10:
+After selecting a phenotype-relevant enriched enhancer set, annotate its overlapping DNMs. For example, fetal-brain enhancers and the packaged CADD >= 10 DNMs:
 
 ```bash
 python scripts/annotate_tad.py \
-  --dnv data/dnvs/cadd_10/dnm_spark.bed.gz \
+  --dnv example/example.bed \
   --resource atlas \
   --enhancer-set Fetal_brain \
   --tad brain \
-  --output results/tad/spark_cadd10_fetal_brain.tsv
+  --output results/tad/example_fetal_brain.tsv
 ```
 
 For craniofacial analyses, use `--tad cncc`. The output contains the overlapping enhancer interval, TAD interval, boundary-crossing status, and all protein-coding genes in that TAD.
@@ -102,9 +100,9 @@ TAD co-membership nominates genes in the same regulatory neighborhood; it does *
 ## Input conventions
 
 - Enhancer and TAD coordinates are GRCh38 BED coordinates.
-- Packaged DNM BED files reproduce the original analysis and contain chromosome, position/start, and position/end without headers.
+- The packaged example DNM BED contains 1,000 randomly selected variants (seed `20261102`) as chromosome, position/start, and position/end without a header.
 - Custom DNM inputs must be tab-delimited BED files with at least three columns and chromosome names matching the enhancer files (`chr1`, `chr2`, ...).
-- To use custom DNMs, arrange them as `DIR/cadd_<threshold>/dnm_<cohort>.bed` or `.bed.gz` and pass `--dnv-root DIR`.
+- To analyze a custom DNM file, pass `--dnv FILE`.
 
 ## Reproducibility provenance
 
@@ -112,4 +110,3 @@ TAD co-membership nominates genes in the same regulatory neighborhood; it does *
 - scEnhancer source and selection: `reproduction_results/work/03_scenhancer/cluster_qc_hg38`, using the reproduced non-unique `part` rule and its asserted count of 165.
 - Enrichment statistic: adapted from `reproduction_results/scripts/07_run_enrichment.py`.
 - TAD resources: GSE77565 cortical-plate TADs for brain analyses and CNCC TADs for craniofacial analyses.
-
