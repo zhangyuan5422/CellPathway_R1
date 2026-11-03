@@ -63,8 +63,8 @@ bash scripts/run_step1.sh
 Or run one resource:
 
 ```bash
-python scripts/run_enrichment.py --resource atlas --workers 8
-python scripts/run_enrichment.py --resource scenhancer --workers 8
+python scripts/run_enrichment.py --resource atlas
+python scripts/run_enrichment.py --resource scenhancer
 ```
 
 The example settings can also be supplied explicitly:
@@ -72,8 +72,7 @@ The example settings can also be supplied explicitly:
 ```bash
 python scripts/run_enrichment.py \
   --resource atlas \
-  --dnv example/example.bed \
-  --workers 8
+  --dnv example/example.bed
 ```
 
 Results are written under `results/enrichment/<resource>/`. The output reports enhancer length, DNM overlap count, DNM count in the remainder of the enhancer union, fold enrichment, one-sided Fisher exact P value, and Benjamini-Hochberg FDR across the complete resource universe.
